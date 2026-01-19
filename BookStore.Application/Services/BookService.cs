@@ -3,7 +3,7 @@ using BookStore.Domain.Entities;
 
 namespace BookStore.Application.Services;
 
-public class BookService
+public class BookService : IBookService
 {
     private readonly IBookRepository _repository;
 

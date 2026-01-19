@@ -1,30 +1,25 @@
 using BookStore.Application.DTOs;
 using BookStore.Application.Interfaces;
-using BookStore.Domain.Entities;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using Microsoft.EntityFrameworkCore;
-using BookStore.Infrastructure.Data;
+using BCrypt.Net;
 
 namespace BookStore.Application.Services;
 
 public class AuthService : IAuthService
 {
-    private readonly BookStoreDbContext _context;
-    private readonly IConfiguration _config;
+    private readonly IUserRepository _userRepository;
+    private readonly IJwtTokenGenerator _jwt;
 
-    public AuthService(BookStoreDbContext context, IConfiguration config)
+    public AuthService(
+        IUserRepository userRepository,
+        IJwtTokenGenerator jwt)
     {
-        _context = context;
-        _config = config;
+        _userRepository = userRepository;
+        _jwt = jwt;
     }
 
     public async Task<string?> AuthenticateAsync(UserLoginDto dto)
     {
-        var user = await _context.Users
-            .FirstOrDefaultAsync(x => x.UserName == dto.UserName);
+        var user = await _userRepository.GetByUsernameAsync(dto.UserName);
 
         if (user is null)
             return null;
@@ -32,38 +27,11 @@ public class AuthService : IAuthService
         if (!VerifyPassword(dto.Password, user.PasswordHash))
             return null;
 
-        return GenerateJwt(user);
+        return _jwt.Generate(user);
     }
 
-    private bool VerifyPassword(string password, string hash)
+    private bool VerifyPassword(string password, string passwordHash)
     {
-        // Para produção, use BCrypt ou PBKDF2
-        return hash == Convert.ToBase64String(Encoding.UTF8.GetBytes(password));
-    }
-
-    private string GenerateJwt(User user)
-    {
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(_config["Jwt:Key"]!)
-        );
-
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.Name, user.UserName),
-            new Claim(ClaimTypes.Role, user.Role),
-            new Claim("UserId", user.Id.ToString())
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: _config["Jwt:Issuer"],
-            audience: _config["Jwt:Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(2),
-            signingCredentials: creds
-        );
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        return BCrypt.Net.BCrypt.Verify(password, passwordHash);
     }
 }
